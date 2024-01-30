@@ -1,3 +1,19 @@
+"""
+GenX: An Configurable Capacity Expansion Model
+Copyright (C) 2021,  Massachusetts Institute of Technology
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+A complete copy of the GNU General Public License v2 (GPLv2) is available
+in LICENSE.txt.  Users uncompressing this from an archive may not have
+received this license file.  If not, see <http://www.gnu.org/licenses/>.
+"""
+
 @doc raw"""
 	co2_cap!(EP::Model, inputs::Dict, setup::Dict)
 
@@ -52,48 +68,161 @@ function co2_cap!(EP::Model, inputs::Dict, setup::Dict)
 	T = inputs["T"]     # Number of time steps (hours)
 	Z = inputs["Z"]     # Number of zones
 
-	### Variable ###
-	# if input files are present, add CO2 cap slack variables
-	if haskey(inputs, "dfCO2Cap_slack")
-		@variable(EP, vCO2Cap_slack[cap = 1:inputs["NCO2Cap"]]>=0)
-
-		@expression(EP, eCCO2Cap_slack[cap = 1:inputs["NCO2Cap"]], 
-		inputs["dfCO2Cap_slack"][cap,:PriceCap] * EP[:vCO2Cap_slack][cap])
-		@expression(EP, eCTotalCO2CapSlack, 
-		sum(EP[:eCCO2Cap_slack][cap] for cap = 1:inputs["NCO2Cap"]))
-		
-		EP[:eObj] += eCTotalCO2CapSlack
-	else 
-		@variable(EP, vCO2Cap_slack[cap = 1:inputs["NCO2Cap"]]==0)
-	end
-
 	### Constraints ###
 
 	## Mass-based: Emissions constraint in absolute emissions limit (tons)
 	if setup["CO2Cap"] == 1
-		@constraint(EP, cCO2Emissions_systemwide[cap=1:inputs["NCO2Cap"]],
-			sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t=1:T) -
-			vCO2Cap_slack[cap] <=
-			sum(inputs["dfMaxCO2"][z,cap] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap])) 
-		)
+		if setup["CO2CapPeriods"] <= 1
+			# CO2 cap based on a single period
+			println("-- Using a single period for mass-based CO2 cap")
+			EP[:cCO2Emissions_systemwide] = single_mass_cap(EP, inputs, 1:T)
+		else
+			println("-- Using $(setup["CO2CapPeriods"]) periods for mass-based CO2 cap")
+			# Breaking up into the timeseries into CO2CapPeriods periods
+			# If periods are uneven, make the first period longest
+			period_times = timeseries2periods(T, setup["CO2CapPeriods"])
+			time_ranges = [p[1]:p[2] for p in eachrow(period_times)]
+			if "CO2CapWiggle" in keys(setup) && setup["CO2CapWiggle"] > 0
+				# Each period can deviate by CO2CapWiggle % from the average
+				println("-- Allowing $(100*setup["CO2CapWiggle"])% deviation from average CO2 cap in each period")
+				EP[:cCO2Emissions_systemwide] = multi_mass_cap(EP, inputs, time_ranges, setup["CO2CapWiggle"])
+				# The total must still be less than the cap
+				EP[:cCO2Emissions_systemwide_tot] = single_mass_cap(EP, inputs, 1:T)
+			else
+			# Each period must strictly stay within the per-period limit
+				EP[:cCO2Emissions_systemwide] = multi_mass_cap(EP, inputs, time_ranges)
+			end
+		end
 
 	## Load + Rate-based: Emissions constraint in terms of rate (tons/MWh)
 	elseif setup["CO2Cap"] == 2 ##This part moved to non_served_energy.jl
-
-		@constraint(EP, cCO2Emissions_systemwide[cap=1:inputs["NCO2Cap"]],
-			sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t=1:T) -
-			vCO2Cap_slack[cap] <=
-			sum(inputs["dfMaxCO2Rate"][z,cap] * sum(inputs["omega"][t] * (inputs["pD"][t,z] - sum(EP[:vNSE][s,t,z] for s in 1:SEG)) for t=1:T) for z = findall(x->x==1, inputs["dfCO2CapZones"][:,cap])) +
-			sum(inputs["dfMaxCO2Rate"][z,cap] * setup["StorageLosses"] *  EP[:eELOSSByZone][z] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]))
-		)
-
+		if setup["CO2CapPeriods"] <= 1
+			println("-- Using a single period for load-based emissions intensity CO2 cap")
+			EP[:cCO2Emissions_systemwide] = single_intensity_cap_load(EP, inputs, 1:T, 0.0, setup["StorageLosses"])
+		else
+			println("-- Using $(setup["CO2CapPeriods"]) periods for load-based emissions intensity CO2 cap")
+			period_times = timeseries2periods(T, setup["CO2CapPeriods"])
+			time_ranges = [p[1]:p[2] for p in eachrow(period_times)]
+			if "CO2CapWiggle" in keys(setup) && setup["CO2CapWiggle"] > 0
+				println("-- Allowing $(100*setup["CO2CapWiggle"])% deviation from average CO2 cap in each period")
+				EP[:cCO2Emissions_systemwide] = multi_intensity_cap_load(EP, inputs, time_ranges, setup["CO2CapWiggle"], setup["StorageLosses"])
+				EP[:cCO2Emissions_systemwide_tot] = single_intensity_cap_load(EP, inputs, 1:T, 0.0, setup["StorageLosses"])
+			else
+				EP[:cCO2Emissions_systemwide] = multi_intensity_cap_load(EP, inputs, time_ranges, 0.0, setup["StorageLosses"])
+			end
+		end
 	## Generation + Rate-based: Emissions constraint in terms of rate (tons/MWh)
 	elseif (setup["CO2Cap"]==3)
-		@constraint(EP, cCO2Emissions_systemwide[cap=1:inputs["NCO2Cap"]],
-			sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t=1:T) -
-			vCO2Cap_slack[cap] <=
-			sum(inputs["dfMaxCO2Rate"][z,cap] * inputs["omega"][t] * EP[:eGenerationByZone][z,t] for t=1:T, z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]))
-		)
+		if setup["CO2CapPeriods"] <= 1
+
+			EP[:cCO2Emissions_systemwide] = single_intensity_cap_gen(EP, inputs, 1:T)
+		else
+			period_times = timeseries2periods(T, setup["CO2CapPeriods"])
+			time_ranges = [p[1]:p[2] for p in eachrow(period_times)]
+			if "CO2CapWiggle" in keys(setup) && setup["CO2CapWiggle"] > 0
+				EP[:cCO2Emissions_systemwide] = multi_intensity_cap_gen(EP, inputs, time_ranges, setup["CO2CapWiggle"])
+				EP[:cCO2Emissions_systemwide_tot] = single_intensity_cap_gen(EP, inputs, 1:T)
+			else
+				EP[:cCO2Emissions_systemwide] = multi_intensity_cap_gen(EP, inputs, time_ranges)
+			end
+		end
 	end 
 
+end
+
+function timeseries2periods(T::Int64, numperiods::Int64)
+	# Breaks up the timeseries into numperiods periods
+	# If periods are uneven, make the first period longest
+	period_times = Array{Int64}(undef, numperiods, 2)
+	min_period_length = Int64(floor(T/numperiods))
+	remainder = T % numperiods
+	for p in 1:numperiods
+		period_times[p,1] = (p-1)*min_period_length + 1 + remainder
+		period_times[p,2] = p*min_period_length + remainder
+	end
+	period_times[1,1] = 1
+	return period_times
+end
+
+function single_mass_cap(EP::Model, inputs::Dict, time_range::AbstractRange{Int64}, period_deviation::Float64=0.0)
+	return @constraint(EP, [cap=1:inputs["NCO2Cap"]],
+		sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t in time_range) 
+		<=
+		(1 + period_deviation) * sum(inputs["dfMaxCO2"][z,cap] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]))
+	)
+end
+
+function multi_mass_cap(EP::Model, inputs::Dict, time_ranges::Vector{<:AbstractRange{Int64}}, period_deviation::Float64=0.0)
+	num_periods = size(time_ranges,1)
+	return @constraint(EP, [cap=1:inputs["NCO2Cap"], p=1:num_periods],
+		sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t in time_ranges[p]) 
+		<=
+		(1 + period_deviation) * sum(inputs["dfMaxCO2"][z,cap] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap])) / num_periods
+	)
+end
+
+function single_intensity_cap_load(EP::Model, inputs::Dict, time_range::AbstractRange{Int64}, period_deviation::Float64=0.0, include_stor_losses::Int64=0)
+	load_emissions = @expression(EP, [cap=1:inputs["NCO2Cap"]], 
+		(1 + period_deviation) * sum(
+			+ inputs["dfMaxCO2Rate"][z,cap] * sum(
+				inputs["omega"][t] * (inputs["pD"][t,z] - sum(EP[:vNSE][s,t,z] for s in 1:inputs["SEG"])) 
+				for t in time_range
+			) 
+			for z = findall(x->x==1, inputs["dfCO2CapZones"][:,cap])
+		) 
+	)
+	if include_stor_losses == 1
+		println("-- Including storage losses in load-based emissions constraint")
+		storage_losses = @expression(EP, [cap=1:inputs["NCO2Cap"]], 
+			(1 + period_deviation) * sum(inputs["dfMaxCO2Rate"][z,cap] * EP[:eELOSSByZone][z] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]))
+		)
+		add_to_expression!(load_emissions, storage_losses)
+	end
+	return @constraint(EP, [cap=1:inputs["NCO2Cap"]],
+		sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t in time_range) 
+		<=
+		load_emissions[cap]
+	)
+end
+
+function multi_intensity_cap_load(EP::Model, inputs::Dict, time_ranges::Vector{<:AbstractRange{Int64}}, period_deviation::Float64=0.0, include_stor_losses::Int64=0)
+	num_periods = size(time_ranges,1)
+	load_emissions = @expression(EP, [cap=1:inputs["NCO2Cap"], p=1:num_periods], 
+		(1 + period_deviation) * sum(
+			+ inputs["dfMaxCO2Rate"][z,cap] * sum(
+				inputs["omega"][t] * (inputs["pD"][t,z] - sum(EP[:vNSE][s,t,z] for s in 1:inputs["SEG"])) 
+				for t in time_ranges[p]
+			) 
+			for z = findall(x->x==1, inputs["dfCO2CapZones"][:,cap])
+		) 
+	)
+	if include_stor_losses == 1
+		println("-- Including storage losses in load-based emissions constraint")
+		storage_losses = @expression(EP, [cap=1:inputs["NCO2Cap"], p=1:num_periods], 
+			(1 + period_deviation) * sum(inputs["dfMaxCO2Rate"][z,cap] * EP[:eELOSSByZone][z] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]))
+		)
+		add_to_expression!(load_emissions, storage_losses)
+	end
+	return @constraint(EP, [cap=1:inputs["NCO2Cap"], p=1:num_periods],
+		sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t in time_ranges[p])
+		<=
+		load_emissions[cap, p]
+	)
+end
+
+function single_intensity_cap_gen(EP::Model, inputs::Dict, time_range::AbstractRange{Int64}, period_deviation::Float64=0.0)
+	return @constraint(EP, [cap=1:inputs["NCO2Cap"]],
+		sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t in time_range) 
+		<=
+		(1 + period_deviation) * sum(inputs["dfMaxCO2Rate"][z,cap] * inputs["omega"][t] * EP[:eGenerationByZone][z,t] for t in time_range, z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]))
+	)
+end
+
+function multi_intensity_cap_gen(EP::Model, inputs::Dict, time_ranges::Vector{<:AbstractRange{Int64}}, period_deviation::Float64=0.0)
+	num_periods = size(time_ranges,1)
+	return @constraint(EP, [cap=1:inputs["NCO2Cap"], p=1:num_periods],
+		sum(inputs["omega"][t] * EP[:eEmissionsByZone][z,t] for z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]), t in time_ranges[p]) 
+		<=
+		(1 + period_deviation) * sum(inputs["dfMaxCO2Rate"][z,cap] * inputs["omega"][t] * EP[:eGenerationByZone][z,t] for t in time_ranges[p], z=findall(x->x==1, inputs["dfCO2CapZones"][:,cap]))
+	)
 end
