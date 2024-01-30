@@ -1,0 +1,14 @@
+Resource,Zone,THERM,FUSION,Cap_Fac_Constraint_Type,VV_Util_Deg,Reactor_Utilization_Guess,Var_Turb_Cap,Turb_Min_Ratio,Turb_Max_Ratio,Add_Therm_Stor,Max_Therm_Stor_MWh,Max_Therm_Stor_Dis_MWe,Min_Therm_Dur,Max_Therm_Dur,Therm_Stor_Leakage_Daily_Frac,Therm_Stor_Charge_Eff_Frac,Therm_Stor_Discharge_Eff_Frac,Blanket_Power_Mult,Stor_Cost_per_MWht,Dis_Cost_per_MWht,Pulse_length_min,Pulse_gap_min,Turb_Min_Frac,Mag_Cool,Plant_fixed_power_MWe,Plant_var_power_MWeperMWt,Salt_Loss,Salt_Eff,Trit_Fuel,Trit_Breed,Trit_Loss,Deu_Fuel,Deu_Loss,Plant_Life,Vessel_Life,Rep_Dur,Dis_Rate,Inv_Vessel_per_MWe,Turb_CAPEX,Trit_Stor_Cost,Deu_Stor_Cost,Deu_Import_Cost
+res_hydro_1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+natural_gas_2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+natural_gas_ccs_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+solar_pv_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+comm_solar_pv_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+res_solar_pv_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+onshore_wind_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+fixed_offshore_wind_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+float_offshore_wind_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+battery_2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ror_hydro_2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+pumped_hydro_2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+fusion_2,2,1,1,2,1,0.5,1,1,1,0,-1,-1,-1,-1,0.02,1,0.9,1.15,20842.34,253085.53,20,1,0,10,10,0.0833333,0.95,0.95,1,1.1,0.001,1,0.001,40,2,0.25,0.06,3360000,38080000,22400000,22400000,500
